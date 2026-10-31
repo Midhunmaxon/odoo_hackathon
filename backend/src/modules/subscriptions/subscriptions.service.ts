@@ -643,15 +643,23 @@ export class SubscriptionsService {
 
     try {
       return await db.transaction(async (trx) => {
-        // 1. Update subscription status & next_billing_date
-        const [updatedSub] = await trx('subscriptions')
-          .where({ id })
+        // Concurrency-safe state transition: UPDATE ... WHERE id = :id AND status = :fromStatus
+        const updatedRows = await trx('subscriptions')
+          .where({ id, status: fromStatus })
           .update({
             status: toStatus,
             next_billing_date: nextBillingDate,
             updated_at: new Date(),
           })
           .returning('*');
+
+        if (!updatedRows || updatedRows.length === 0) {
+          throw ApiError.conflict(
+            `Concurrent update conflict: subscription #${id} status changed from ${fromStatus} before transition could complete`
+          );
+        }
+
+        const updatedSub = updatedRows[0];
 
         // 2. Write history row in the SAME transaction
         await trx('subscription_status_history').insert({
@@ -673,10 +681,13 @@ export class SubscriptionsService {
       if (err instanceof ApiError) throw err;
       seedInMemorySubscriptions();
       const memSub = inMemorySubscriptions.get(id);
-      if (memSub) {
-        memSub.status = toStatus;
-        memSub.next_billing_date = nextBillingDate;
+      if (!memSub || memSub.status !== fromStatus) {
+        throw ApiError.conflict(
+          `Concurrent update conflict: subscription #${id} status changed from ${fromStatus} before transition could complete`
+        );
       }
+      memSub.status = toStatus;
+      memSub.next_billing_date = nextBillingDate;
       const historyList = inMemoryHistory.get(id) || [];
       historyList.push({
         id: historyList.length + 1,
@@ -688,7 +699,7 @@ export class SubscriptionsService {
       });
       inMemoryHistory.set(id, historyList);
       return {
-        ...(memSub || sub),
+        ...memSub,
         status: toStatus,
         next_billing_date: nextBillingDate,
         history: historyList,
@@ -721,6 +732,13 @@ export class SubscriptionsService {
 
     try {
       return await db.transaction(async (trx) => {
+        const activeSub = await trx('subscriptions').where({ id, status: 'ACTIVE' }).first();
+        if (!activeSub) {
+          throw ApiError.conflict(
+            `Concurrent update conflict: subscription #${id} is no longer ACTIVE and cannot be paused`
+          );
+        }
+
         await trx('subscription_status_history').insert({
           subscription_id: id,
           from_status: sub.status,
@@ -734,11 +752,17 @@ export class SubscriptionsService {
           .where({ subscription_id: id })
           .orderBy('changed_at', 'asc');
 
-        return { ...sub, lines, history };
+        return { ...activeSub, lines, history };
       });
     } catch (err: any) {
       if (err instanceof ApiError) throw err;
       seedInMemorySubscriptions();
+      const memSub = inMemorySubscriptions.get(id);
+      if (!memSub || memSub.status !== 'ACTIVE') {
+        throw ApiError.conflict(
+          `Concurrent update conflict: subscription #${id} is no longer ACTIVE and cannot be paused`
+        );
+      }
       const historyList = inMemoryHistory.get(id) || [];
       historyList.push({
         id: historyList.length + 1,
@@ -750,7 +774,7 @@ export class SubscriptionsService {
       });
       inMemoryHistory.set(id, historyList);
       return {
-        ...sub,
+        ...memSub,
         history: historyList,
       };
     }
@@ -769,14 +793,21 @@ export class SubscriptionsService {
 
     try {
       return await db.transaction(async (trx) => {
-        const [updatedSub] = await trx('subscriptions')
-          .where({ id })
+        const updatedRows = await trx('subscriptions')
+          .where({ id, status: sub.status })
           .update({
             status: 'ACTIVE',
             next_billing_date: nextBillingDate,
             updated_at: new Date(),
           })
           .returning('*');
+
+        if (!updatedRows || updatedRows.length === 0) {
+          throw ApiError.conflict(
+            `Concurrent update conflict: subscription #${id} status changed before renewal could complete`
+          );
+        }
+        const updatedSub = updatedRows[0];
 
         await trx('subscription_status_history').insert({
           subscription_id: id,
@@ -797,10 +828,13 @@ export class SubscriptionsService {
       if (err instanceof ApiError) throw err;
       seedInMemorySubscriptions();
       const memSub = inMemorySubscriptions.get(id);
-      if (memSub) {
-        memSub.status = 'ACTIVE';
-        memSub.next_billing_date = nextBillingDate;
+      if (!memSub || memSub.status !== sub.status) {
+        throw ApiError.conflict(
+          `Concurrent update conflict: subscription #${id} status changed before renewal could complete`
+        );
       }
+      memSub.status = 'ACTIVE';
+      memSub.next_billing_date = nextBillingDate;
       const historyList = inMemoryHistory.get(id) || [];
       historyList.push({
         id: historyList.length + 1,
@@ -812,7 +846,7 @@ export class SubscriptionsService {
       });
       inMemoryHistory.set(id, historyList);
       return {
-        ...(memSub || sub),
+        ...memSub,
         status: 'ACTIVE',
         next_billing_date: nextBillingDate,
         history: historyList,
