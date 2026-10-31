@@ -7,7 +7,7 @@ import { DashboardLayout } from './components/layout/DashboardLayout';
 import { LoginPage } from './features/auth';
 import { UsersPage } from './features/users';
 import { CatalogPage } from './features/catalog';
-import { SubscriptionsPage } from './features/subscriptions';
+import { SubscriptionsPage, SubscriptionCreatePage, SubscriptionDetailPage } from './features/subscriptions';
 import { TaxDiscountPage } from './features/tax-discount';
 import { InvoicesPage } from './features/invoices';
 import { PaymentsPage } from './features/payments';
@@ -115,6 +115,28 @@ export function App() {
             <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
               <DashboardLayout>
                 <SubscriptionsPage />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/subscriptions/new"
+          element={
+            <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+              <DashboardLayout>
+                <SubscriptionCreatePage />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/subscriptions/:id"
+          element={
+            <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'CUSTOMER']}>
+              <DashboardLayout>
+                <SubscriptionDetailPage />
               </DashboardLayout>
             </ProtectedRoute>
           }
