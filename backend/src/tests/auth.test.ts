@@ -375,4 +375,33 @@ describe('Auth & Role Guards', () => {
       expect(res.body.error.message).toMatch(/invalid or expired/i);
     });
   });
+
+  describe('Direct /auth/* Route Aliases', () => {
+    it('should support POST /auth/signup and POST /auth/login directly without /api prefix', async () => {
+      const email = 'direct_route_user@brightloop.com';
+      const password = 'DirectPassword123!';
+
+      // POST /auth/signup
+      const signupRes = await request(app)
+        .post('/auth/signup')
+        .send({ email, password, name: 'Direct User' });
+      expect(signupRes.status).toBe(201);
+      expect(signupRes.body.data.role).toBe('CUSTOMER');
+
+      // POST /auth/login
+      const loginRes = await request(app)
+        .post('/auth/login')
+        .send({ email, password });
+      expect(loginRes.status).toBe(200);
+      expect(loginRes.body.data).toHaveProperty('token');
+      expect(loginRes.body.data.user.role).toBe('CUSTOMER');
+
+      // POST /auth/forgot-password
+      const forgotRes = await request(app)
+        .post('/auth/forgot-password')
+        .send({ email });
+      expect(forgotRes.status).toBe(200);
+      expect(forgotRes.body.success).toBe(true);
+    });
+  });
 });

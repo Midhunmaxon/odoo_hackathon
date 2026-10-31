@@ -32,6 +32,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
 
 // Mount Module Routers
 app.use('/api/auth', authRouter);
+app.use('/auth', authRouter); // Alias for direct module path
 app.use('/api/users', usersRouter);
 app.use('/api/catalog', catalogRouter);
 app.use('/api/subscriptions', subscriptionsRouter);
