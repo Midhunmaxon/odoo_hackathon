@@ -145,3 +145,89 @@ Standard Error Codes:
 - `NOT_FOUND` (404)
 - `CONFLICT` (409)
 - `INTERNAL_SERVER_ERROR` (500)
+
+---
+
+## 6. Shared Reusable Frontend Components
+
+All common UI components live in `frontend/src/components/` and are re-exported from `frontend/src/components/index.ts` for immediate reuse across all teams (Agents A, B, and C).
+
+### 1. `DataTable<T>`
+Full-featured responsive data table with built-in loading skeletons, empty state with call-to-action, error retry handling, and standard pagination.
+
+```tsx
+import { DataTable, Column } from '../../components';
+
+const columns: Column<Subscription>[] = [
+  { key: 'number', header: 'Subscription #' },
+  { key: 'status', header: 'Status', render: (item) => <StatusBadge status={item.status} /> },
+  { key: 'amount', header: 'Amount', align: 'right', render: (item) => `$${item.amount}` },
+];
+
+<DataTable
+  columns={columns}
+  data={data?.data}
+  isLoading={isLoading}
+  error={error}
+  onRetry={() => refetch()}
+  page={page}
+  limit={limit}
+  total={data?.total || 0}
+  onPageChange={(newPage) => setPage(newPage)}
+  emptyTitle="No records found"
+  emptyMessage="There are no items matching your criteria."
+/>
+```
+
+### 2. `StatusBadge`
+Standard status chip mapping domain states (`ACTIVE`, `PAID`, `CONFIRMED`, `DRAFT`, `QUOTATION`, `PENDING`, `CLOSED`, `CANCELLED`, `DEACTIVATED`, `OVERDUE`) to uniform theme colors.
+
+```tsx
+import { StatusBadge } from '../../components';
+
+<StatusBadge status="ACTIVE" size="sm" />
+<StatusBadge status={invoice.status} label={isPaid ? 'PAID' : 'UNPAID'} />
+```
+
+### 3. `FormField`
+Standard form input wrapper providing label, required asterisk (`*`), inline error message formatting, and helper hints.
+
+```tsx
+import { FormField } from '../../components';
+
+<FormField label="Plan Name" htmlFor="plan-name" required error={errors.name}>
+  <input id="plan-name" type="text" value={name} onChange={(e) => setName(e.target.value)} />
+</FormField>
+```
+
+### 4. `Toast` (`useToast`)
+Global notification manager for showing dismissible feedback toasts anywhere in the tree.
+
+```tsx
+import { useToast } from '../../components';
+
+const { success, error, warning, info } = useToast();
+
+// Usage:
+success('Record saved successfully.');
+error('Failed to update subscription.');
+```
+
+### 5. `ConfirmDialog`
+Accessible modal dialog for destructive or critical actions (e.g., delete, cancel, deactivate).
+
+```tsx
+import { ConfirmDialog } from '../../components';
+
+<ConfirmDialog
+  isOpen={isOpen}
+  onClose={() => setIsOpen(false)}
+  onConfirm={handleDelete}
+  title="Delete Product Variant?"
+  description="This will permanently delete this variant from the catalog."
+  confirmText="Delete Variant"
+  isDangerous={true}
+  isLoading={isDeleting}
+/>
+```
+

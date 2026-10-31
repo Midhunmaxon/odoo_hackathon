@@ -2,17 +2,29 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { DashboardLayout } from './components/layout/DashboardLayout';
+import { ToastProvider } from './components/Toast';
 
-// Features
-import { LoginPage } from './features/auth';
-import { UsersPage } from './features/users';
+// Features - Auth
+import {
+  LoginPage,
+  SignupPage,
+  ForgotPasswordPage,
+  ResetPasswordPage,
+} from './features/auth';
+
+// Features - User & Staff Management
+import { UsersPage, StaffPage } from './features/users';
+
+// Features - Customer Portal
+import { CustomerPortalPage } from './features/portal';
+
+// Other Domain Features (Agents B & C)
 import { CatalogPage } from './features/catalog';
 import { SubscriptionsPage, SubscriptionCreatePage, SubscriptionDetailPage } from './features/subscriptions';
 import { TaxDiscountPage } from './features/tax-discount';
 import { InvoicesPage } from './features/invoices';
 import { PaymentsPage } from './features/payments';
 import { ReportsPage } from './features/reports';
-import { CustomerPortalPage } from './features/portal';
 
 // Dashboard Overview Page
 const OverviewPage: React.FC = () => {
@@ -48,8 +60,9 @@ const OverviewPage: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
           <h2 className="font-bold text-slate-800 mb-2">Agent Team A</h2>
-          <p className="text-xs text-slate-500 mb-4">Auth, User Management, and Customer Portal self-service.</p>
+          <p className="text-xs text-slate-500 mb-4">Auth, User & Staff Management, and Customer Portal self-service.</p>
           <div className="space-y-1 text-xs">
+            <Link to="/staff" className="text-blue-600 hover:underline block">• Staff Administration</Link>
             <Link to="/users" className="text-blue-600 hover:underline block">• Users & RBAC</Link>
             <Link to="/portal" className="text-blue-600 hover:underline block">• Customer Portal</Link>
           </div>
@@ -92,136 +105,177 @@ const UnauthorizedPage: React.FC = () => (
 
 export function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/unauthorized" element={<UnauthorizedPage />} />
+    <ToastProvider>
+      <BrowserRouter>
+        <Routes>
+          {/* Public Authentication Routes */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/unauthorized" element={<UnauthorizedPage />} />
 
-        {/* Protected Dashboard Routes */}
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
-              <DashboardLayout>
-                <OverviewPage />
-              </DashboardLayout>
-            </ProtectedRoute>
-          }
-        />
+          {/* Protected Dashboard Routes */}
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+                <DashboardLayout>
+                  <OverviewPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/subscriptions"
-          element={
-            <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
-              <DashboardLayout>
-                <SubscriptionsPage />
-              </DashboardLayout>
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/subscriptions"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+                <DashboardLayout>
+                  <SubscriptionsPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/subscriptions/new"
-          element={
-            <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
-              <DashboardLayout>
-                <SubscriptionCreatePage />
-              </DashboardLayout>
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/subscriptions/new"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+                <DashboardLayout>
+                  <SubscriptionCreatePage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/subscriptions/:id"
-          element={
-            <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'CUSTOMER']}>
-              <DashboardLayout>
-                <SubscriptionDetailPage />
-              </DashboardLayout>
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/subscriptions/:id"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'CUSTOMER']}>
+                <DashboardLayout>
+                  <SubscriptionDetailPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/catalog"
-          element={
-            <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
-              <DashboardLayout>
-                <CatalogPage />
-              </DashboardLayout>
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/catalog"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+                <DashboardLayout>
+                  <CatalogPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/invoices"
-          element={
-            <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
-              <DashboardLayout>
-                <InvoicesPage />
-              </DashboardLayout>
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/invoices"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+                <DashboardLayout>
+                  <InvoicesPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/payments"
-          element={
-            <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
-              <DashboardLayout>
-                <PaymentsPage />
-              </DashboardLayout>
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/payments"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+                <DashboardLayout>
+                  <PaymentsPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/tax-discount"
-          element={
-            <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
-              <DashboardLayout>
-                <TaxDiscountPage />
-              </DashboardLayout>
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/tax-discount"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+                <DashboardLayout>
+                  <TaxDiscountPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/users"
-          element={
-            <ProtectedRoute allowedRoles={['ADMIN']}>
-              <DashboardLayout>
-                <UsersPage />
-              </DashboardLayout>
-            </ProtectedRoute>
-          }
-        />
+          {/* Admin Staff Administration */}
+          <Route
+            path="/staff"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN']}>
+                <DashboardLayout>
+                  <StaffPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/reports"
-          element={
-            <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
-              <DashboardLayout>
-                <ReportsPage />
-              </DashboardLayout>
-            </ProtectedRoute>
-          }
-        />
+          {/* Admin Users & RBAC */}
+          <Route
+            path="/users"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN']}>
+                <DashboardLayout>
+                  <UsersPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/portal"
-          element={
-            <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'CUSTOMER']}>
-              <DashboardLayout>
-                <CustomerPortalPage />
-              </DashboardLayout>
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/reports"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+                <DashboardLayout>
+                  <ReportsPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
 
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+          {/* Customer Portal (Customer, Staff & Admin) */}
+          <Route
+            path="/portal"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'CUSTOMER']}>
+                <DashboardLayout>
+                  <CustomerPortalPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/portal/subscriptions"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'CUSTOMER']}>
+                <DashboardLayout>
+                  <CustomerPortalPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/portal/invoices"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'CUSTOMER']}>
+                <DashboardLayout>
+                  <CustomerPortalPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </ToastProvider>
   );
 }
 
