@@ -695,6 +695,130 @@ export class SubscriptionsService {
       };
     }
   }
+
+  /* ====================================================================
+   * SUBSCRIPTION ACTIONS: close, pause, renew
+   * Honors plan allow_close / allow_pause / allow_renew rules
+   * ==================================================================== */
+
+  async closeSubscription(id: number, userId?: number): Promise<SubscriptionRecord> {
+    return this.transitionStatus(id, 'CLOSED', userId);
+  }
+
+  async pauseSubscription(id: number, userId?: number): Promise<SubscriptionRecord> {
+    const sub = await this.getSubscriptionById(id);
+    const plan = await catalogService.getPlanById(sub.plan_id);
+
+    if (!plan.allow_pause) {
+      throw ApiError.badRequest(`Cannot pause subscription: associated plan "${plan.name}" does not allow pausing`);
+    }
+
+    if (sub.status !== 'ACTIVE') {
+      throw ApiError.badRequest(
+        `Cannot pause subscription: subscription is in state ${sub.status}, only ACTIVE subscriptions can be paused`
+      );
+    }
+
+    try {
+      return await db.transaction(async (trx) => {
+        await trx('subscription_status_history').insert({
+          subscription_id: id,
+          from_status: sub.status,
+          to_status: 'PAUSED',
+          changed_by: userId || null,
+          changed_at: new Date(),
+        });
+
+        const lines = await trx('subscription_lines').where({ subscription_id: id });
+        const history = await trx('subscription_status_history')
+          .where({ subscription_id: id })
+          .orderBy('changed_at', 'asc');
+
+        return { ...sub, lines, history };
+      });
+    } catch (err: any) {
+      if (err instanceof ApiError) throw err;
+      seedInMemorySubscriptions();
+      const historyList = inMemoryHistory.get(id) || [];
+      historyList.push({
+        id: historyList.length + 1,
+        subscription_id: id,
+        from_status: sub.status,
+        to_status: 'PAUSED',
+        changed_by: userId || null,
+        changed_at: new Date(),
+      });
+      inMemoryHistory.set(id, historyList);
+      return {
+        ...sub,
+        history: historyList,
+      };
+    }
+  }
+
+  async renewSubscription(id: number, userId?: number): Promise<SubscriptionRecord> {
+    const sub = await this.getSubscriptionById(id);
+    const plan = await catalogService.getPlanById(sub.plan_id);
+
+    if (!plan.allow_renew) {
+      throw ApiError.badRequest(`Cannot renew subscription: associated plan "${plan.name}" does not allow renewal`);
+    }
+
+    const baseDate = sub.next_billing_date || sub.start_date;
+    const nextBillingDate = this.computeNextBillingDate(baseDate, plan.billing_period);
+
+    try {
+      return await db.transaction(async (trx) => {
+        const [updatedSub] = await trx('subscriptions')
+          .where({ id })
+          .update({
+            status: 'ACTIVE',
+            next_billing_date: nextBillingDate,
+            updated_at: new Date(),
+          })
+          .returning('*');
+
+        await trx('subscription_status_history').insert({
+          subscription_id: id,
+          from_status: sub.status,
+          to_status: 'RENEWED',
+          changed_by: userId || null,
+          changed_at: new Date(),
+        });
+
+        const lines = await trx('subscription_lines').where({ subscription_id: id });
+        const history = await trx('subscription_status_history')
+          .where({ subscription_id: id })
+          .orderBy('changed_at', 'asc');
+
+        return { ...updatedSub, lines, history };
+      });
+    } catch (err: any) {
+      if (err instanceof ApiError) throw err;
+      seedInMemorySubscriptions();
+      const memSub = inMemorySubscriptions.get(id);
+      if (memSub) {
+        memSub.status = 'ACTIVE';
+        memSub.next_billing_date = nextBillingDate;
+      }
+      const historyList = inMemoryHistory.get(id) || [];
+      historyList.push({
+        id: historyList.length + 1,
+        subscription_id: id,
+        from_status: sub.status,
+        to_status: 'RENEWED',
+        changed_by: userId || null,
+        changed_at: new Date(),
+      });
+      inMemoryHistory.set(id, historyList);
+      return {
+        ...(memSub || sub),
+        status: 'ACTIVE',
+        next_billing_date: nextBillingDate,
+        history: historyList,
+      };
+    }
+  }
 }
 
 export const subscriptionsService = new SubscriptionsService();

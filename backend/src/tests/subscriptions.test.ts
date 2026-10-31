@@ -156,6 +156,7 @@ describe('Subscriptions Module (Templates, Subscriptions & Strict State Machine)
       subId = sub.id;
     });
 
+    // 1. Illegal transitions from DRAFT
     it('Should reject illegal jump: DRAFT → ACTIVE directly with 400', async () => {
       const res = await request(app)
         .post(`/subscriptions/${subId}/transition`)
@@ -176,7 +177,18 @@ describe('Subscriptions Module (Templates, Subscriptions & Strict State Machine)
       expect(res.body.error.message).toMatch(/Illegal status transition/i);
     });
 
-    it('Legal Transition 1: DRAFT → QUOTATION should succeed and record history row', async () => {
+    it('Should reject same-status transition: DRAFT → DRAFT with 400', async () => {
+      const res = await request(app)
+        .post(`/subscriptions/${subId}/transition`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({ to_status: 'DRAFT' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.message).toMatch(/already in state DRAFT/i);
+    });
+
+    // 2. Legal transition: DRAFT → QUOTATION
+    it('Legal Transition: DRAFT → QUOTATION should succeed and record history row', async () => {
       const res = await request(app)
         .post(`/subscriptions/${subId}/transition`)
         .set('Authorization', `Bearer ${staffToken}`)
@@ -193,7 +205,34 @@ describe('Subscriptions Module (Templates, Subscriptions & Strict State Machine)
       expect(lastEntry.to_status).toBe('QUOTATION');
     });
 
-    it('Legal Transition 2: QUOTATION → CONFIRMED should succeed', async () => {
+    // 3. Transitions from QUOTATION
+    it('Should reject illegal jump: QUOTATION → ACTIVE with 400', async () => {
+      const res = await request(app)
+        .post(`/subscriptions/${subId}/transition`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({ to_status: 'ACTIVE' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.message).toMatch(/Illegal status transition/i);
+    });
+
+    it('Legal Transition: QUOTATION → DRAFT should succeed (re-drafting)', async () => {
+      const res = await request(app)
+        .post(`/subscriptions/${subId}/transition`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({ to_status: 'DRAFT' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('DRAFT');
+
+      // Transition back to QUOTATION for subsequent steps
+      await request(app)
+        .post(`/subscriptions/${subId}/transition`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({ to_status: 'QUOTATION' });
+    });
+
+    it('Legal Transition: QUOTATION → CONFIRMED should succeed', async () => {
       const res = await request(app)
         .post(`/subscriptions/${subId}/transition`)
         .set('Authorization', `Bearer ${staffToken}`)
@@ -203,7 +242,28 @@ describe('Subscriptions Module (Templates, Subscriptions & Strict State Machine)
       expect(res.body.data.status).toBe('CONFIRMED');
     });
 
-    it('Legal Transition 3: CONFIRMED → ACTIVE should set next_billing_date and status ACTIVE', async () => {
+    // 4. Transitions from CONFIRMED
+    it('Should reject illegal jump: CONFIRMED → DRAFT with 400', async () => {
+      const res = await request(app)
+        .post(`/subscriptions/${subId}/transition`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({ to_status: 'DRAFT' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.message).toMatch(/Illegal status transition/i);
+    });
+
+    it('Should reject illegal jump: CONFIRMED → QUOTATION with 400', async () => {
+      const res = await request(app)
+        .post(`/subscriptions/${subId}/transition`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({ to_status: 'QUOTATION' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.message).toMatch(/Illegal status transition/i);
+    });
+
+    it('Legal Transition: CONFIRMED → ACTIVE should set next_billing_date and status ACTIVE', async () => {
       const res = await request(app)
         .post(`/subscriptions/${subId}/transition`)
         .set('Authorization', `Bearer ${staffToken}`)
@@ -215,7 +275,94 @@ describe('Subscriptions Module (Templates, Subscriptions & Strict State Machine)
       expect(res.body.data.next_billing_date).not.toBeNull();
     });
 
-    it('Legal Transition 4: ACTIVE → CLOSED should close the subscription', async () => {
+    // 5. Transitions from ACTIVE
+    it('Should reject illegal jump: ACTIVE → DRAFT with 400', async () => {
+      const res = await request(app)
+        .post(`/subscriptions/${subId}/transition`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({ to_status: 'DRAFT' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.message).toMatch(/Illegal status transition/i);
+    });
+
+    it('Should reject illegal jump: ACTIVE → QUOTATION with 400', async () => {
+      const res = await request(app)
+        .post(`/subscriptions/${subId}/transition`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({ to_status: 'QUOTATION' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.message).toMatch(/Illegal status transition/i);
+    });
+
+    it('Should reject illegal jump: ACTIVE → CONFIRMED with 400', async () => {
+      const res = await request(app)
+        .post(`/subscriptions/${subId}/transition`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({ to_status: 'CONFIRMED' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.message).toMatch(/Illegal status transition/i);
+    });
+
+    // 6. Direct closures from different states (DRAFT, QUOTATION, CONFIRMED)
+    it('Legal Transition: DRAFT → CLOSED should succeed directly', async () => {
+      const freshSub = await subscriptionsService.createSubscription({
+        customer_id: 4,
+        plan_id: 1,
+        start_date: '2026-06-01',
+        lines: [{ product_id: 1, quantity: 1 }],
+      });
+
+      const res = await request(app)
+        .post(`/subscriptions/${freshSub.id}/transition`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({ to_status: 'CLOSED' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('CLOSED');
+    });
+
+    it('Legal Transition: QUOTATION → CLOSED should succeed directly', async () => {
+      const freshSub = await subscriptionsService.createSubscription({
+        customer_id: 4,
+        plan_id: 1,
+        start_date: '2026-06-01',
+        lines: [{ product_id: 1, quantity: 1 }],
+      });
+      await subscriptionsService.transitionStatus(freshSub.id, 'QUOTATION');
+
+      const res = await request(app)
+        .post(`/subscriptions/${freshSub.id}/transition`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({ to_status: 'CLOSED' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('CLOSED');
+    });
+
+    it('Legal Transition: CONFIRMED → CLOSED should succeed directly', async () => {
+      const freshSub = await subscriptionsService.createSubscription({
+        customer_id: 4,
+        plan_id: 1,
+        start_date: '2026-06-01',
+        lines: [{ product_id: 1, quantity: 1 }],
+      });
+      await subscriptionsService.transitionStatus(freshSub.id, 'QUOTATION');
+      await subscriptionsService.transitionStatus(freshSub.id, 'CONFIRMED');
+
+      const res = await request(app)
+        .post(`/subscriptions/${freshSub.id}/transition`)
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({ to_status: 'CLOSED' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('CLOSED');
+    });
+
+    // 7. Transition ACTIVE → CLOSED
+    it('Legal Transition: ACTIVE → CLOSED should close the subscription', async () => {
       const res = await request(app)
         .post(`/subscriptions/${subId}/transition`)
         .set('Authorization', `Bearer ${staffToken}`)
@@ -225,18 +372,22 @@ describe('Subscriptions Module (Templates, Subscriptions & Strict State Machine)
       expect(res.body.data.status).toBe('CLOSED');
     });
 
+    // 8. Terminal state CLOSED: no transition permitted to any state
     it('Should reject transition from CLOSED to any state (terminal state)', async () => {
-      const res = await request(app)
-        .post(`/subscriptions/${subId}/transition`)
-        .set('Authorization', `Bearer ${staffToken}`)
-        .send({ to_status: 'ACTIVE' });
+      const targets = ['DRAFT', 'QUOTATION', 'CONFIRMED', 'ACTIVE'];
+      for (const target of targets) {
+        const res = await request(app)
+          .post(`/subscriptions/${subId}/transition`)
+          .set('Authorization', `Bearer ${staffToken}`)
+          .send({ to_status: target });
 
-      expect(res.status).toBe(400);
-      expect(res.body.error.message).toMatch(/Illegal status transition.*from CLOSED to ACTIVE/i);
+        expect(res.status).toBe(400);
+        expect(res.body.error.message).toMatch(/Illegal status transition.*from CLOSED to/i);
+      }
     });
 
+    // 9. Plan rules: allow_close, allow_pause, allow_renew
     it('Should honor plan rules: reject transition to CLOSED if plan.allow_close is false', async () => {
-      // Create a plan with allow_close: false
       const nonClosablePlan = await catalogService.createPlan({
         name: 'Fixed Term Non-Closable Plan',
         price: 999,
@@ -248,7 +399,6 @@ describe('Subscriptions Module (Templates, Subscriptions & Strict State Machine)
         status: 'ACTIVE',
       });
 
-      // Create subscription under this plan
       const sub = await subscriptionsService.createSubscription({
         customer_id: 4,
         plan_id: nonClosablePlan.id,
@@ -256,7 +406,6 @@ describe('Subscriptions Module (Templates, Subscriptions & Strict State Machine)
         lines: [{ product_id: 1, quantity: 1 }],
       });
 
-      // Attempt to transition to CLOSED
       const res = await request(app)
         .post(`/subscriptions/${sub.id}/transition`)
         .set('Authorization', `Bearer ${adminToken}`)
@@ -264,6 +413,104 @@ describe('Subscriptions Module (Templates, Subscriptions & Strict State Machine)
 
       expect(res.status).toBe(400);
       expect(res.body.error.message).toMatch(/does not allow closing/i);
+
+      // Also verify POST /subscriptions/:id/close rejects
+      const closeRes = await request(app)
+        .post(`/subscriptions/${sub.id}/close`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(closeRes.status).toBe(400);
+      expect(closeRes.body.error.message).toMatch(/does not allow closing/i);
+    });
+
+    it('Should honor plan rules: reject pause if plan.allow_pause is false, succeed if true', async () => {
+      // Create plan with allow_pause: false
+      const noPausePlan = await catalogService.createPlan({
+        name: 'Non-Pausable Plan',
+        price: 199,
+        billing_period: 'MONTHLY',
+        min_quantity: 1,
+        allow_close: true,
+        allow_pause: false,
+        allow_renew: true,
+        status: 'ACTIVE',
+      });
+
+      const subNoPause = await subscriptionsService.createSubscription({
+        customer_id: 4,
+        plan_id: noPausePlan.id,
+        start_date: '2026-08-01',
+        status: 'ACTIVE',
+        lines: [{ product_id: 1, quantity: 1 }],
+      });
+
+      const resReject = await request(app)
+        .post(`/subscriptions/${subNoPause.id}/pause`)
+        .set('Authorization', `Bearer ${staffToken}`);
+
+      expect(resReject.status).toBe(400);
+      expect(resReject.body.error.message).toMatch(/does not allow pausing/i);
+
+      // Create subscription under pausable plan (Plan 1)
+      const pausableSub = await subscriptionsService.createSubscription({
+        customer_id: 4,
+        plan_id: 1, // allow_pause: true
+        start_date: '2026-08-01',
+        status: 'ACTIVE',
+        lines: [{ product_id: 1, quantity: 1 }],
+      });
+
+      const resSuccess = await request(app)
+        .post(`/subscriptions/${pausableSub.id}/pause`)
+        .set('Authorization', `Bearer ${staffToken}`);
+
+      expect(resSuccess.status).toBe(200);
+      expect(resSuccess.body.data.history.some((h: any) => h.to_status === 'PAUSED')).toBe(true);
+    });
+
+    it('Should honor plan rules: reject renew if plan.allow_renew is false, succeed if true', async () => {
+      // Create plan with allow_renew: false
+      const noRenewPlan = await catalogService.createPlan({
+        name: 'One-Time Non-Renewable Plan',
+        price: 500,
+        billing_period: 'YEARLY',
+        min_quantity: 1,
+        allow_close: true,
+        allow_pause: true,
+        allow_renew: false,
+        status: 'ACTIVE',
+      });
+
+      const subNoRenew = await subscriptionsService.createSubscription({
+        customer_id: 4,
+        plan_id: noRenewPlan.id,
+        start_date: '2026-09-01',
+        status: 'ACTIVE',
+        lines: [{ product_id: 1, quantity: 1 }],
+      });
+
+      const resReject = await request(app)
+        .post(`/subscriptions/${subNoRenew.id}/renew`)
+        .set('Authorization', `Bearer ${staffToken}`);
+
+      expect(resReject.status).toBe(400);
+      expect(resReject.body.error.message).toMatch(/does not allow renewal/i);
+
+      // Create subscription under renewable plan (Plan 1)
+      const renewableSub = await subscriptionsService.createSubscription({
+        customer_id: 4,
+        plan_id: 1, // allow_renew: true
+        start_date: '2026-09-01',
+        status: 'ACTIVE',
+        lines: [{ product_id: 1, quantity: 1 }],
+      });
+
+      const resSuccess = await request(app)
+        .post(`/subscriptions/${renewableSub.id}/renew`)
+        .set('Authorization', `Bearer ${staffToken}`);
+
+      expect(resSuccess.status).toBe(200);
+      expect(resSuccess.body.data.status).toBe('ACTIVE');
+      expect(resSuccess.body.data.next_billing_date).toBeDefined();
     });
   });
 

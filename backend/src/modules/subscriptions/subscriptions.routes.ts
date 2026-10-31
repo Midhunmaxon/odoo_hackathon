@@ -306,3 +306,63 @@ subscriptionsRouter.post(
     }
   }
 );
+
+/* ====================================================================
+ * SUBSCRIPTION ACTIONS: close, pause, renew
+ * Honors plan allow_close / allow_pause / allow_renew rules
+ * ==================================================================== */
+
+/**
+ * POST /:id/close
+ */
+subscriptionsRouter.post(
+  '/:id/close',
+  requireAuth,
+  requireRole('ADMIN', 'STAFF'),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const sub = await subscriptionsService.closeSubscription(id, req.user?.id);
+      sendSuccess(res, sub, 'Subscription closed successfully');
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * POST /:id/pause
+ */
+subscriptionsRouter.post(
+  '/:id/pause',
+  requireAuth,
+  requireRole('ADMIN', 'STAFF'),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const sub = await subscriptionsService.pauseSubscription(id, req.user?.id);
+      sendSuccess(res, sub, 'Subscription paused successfully');
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * POST /:id/renew
+ */
+subscriptionsRouter.post(
+  '/:id/renew',
+  requireAuth,
+  requireRole('ADMIN', 'STAFF'),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const sub = await subscriptionsService.renewSubscription(id, req.user?.id);
+      sendSuccess(res, sub, 'Subscription renewed successfully');
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
