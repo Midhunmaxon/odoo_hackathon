@@ -1,9 +1,13 @@
 import { app } from './app';
 import { env } from './config/env';
+import { startCatalogCron } from './modules/catalog';
 
 const server = app.listen(env.PORT, () => {
   console.log(`🚀 Brightloop Backend listening at http://localhost:${env.PORT}`);
   console.log(`📡 Environment: ${env.NODE_ENV}`);
+  if (env.NODE_ENV !== 'test') {
+    startCatalogCron();
+  }
 });
 
 process.on('SIGTERM', () => {

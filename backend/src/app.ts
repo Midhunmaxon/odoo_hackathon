@@ -35,7 +35,13 @@ app.use('/api/auth', authRouter);
 app.use('/auth', authRouter); // Alias for direct module path
 app.use('/api/users', usersRouter);
 app.use('/api/catalog', catalogRouter);
+app.use('/catalog', catalogRouter);
+app.use('/plans', (req, res, next) => {
+  req.url = '/plans' + req.url;
+  catalogRouter(req, res, next);
+});
 app.use('/api/subscriptions', subscriptionsRouter);
+app.use('/subscriptions', subscriptionsRouter);
 app.use('/api/tax-discount', taxDiscountRouter);
 app.use('/api/taxes', taxDiscountRouter); // Alias for convenience
 app.use('/api/invoices', invoicesRouter);
