@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useLocation, useNavigate } from 'react-router-dom';
 import apiClient from '../../lib/axios';
 import { Subscription, Invoice, PaginatedResult, User } from '../../types';
 import { DataTable, Column } from '../../components/DataTable';
@@ -19,11 +20,31 @@ import {
 } from 'lucide-react';
 
 export const CustomerPortalPage: React.FC = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const userJson = localStorage.getItem('brightloop_user');
   const user: User | null = userJson ? JSON.parse(userJson) : null;
 
-  // Active Tab: 'subscriptions' | 'invoices'
-  const [activeTab, setActiveTab] = useState<'subscriptions' | 'invoices'>('subscriptions');
+  // Sync Active Tab with current pathname
+  const initialTab = location.pathname.includes('/invoices') ? 'invoices' : 'subscriptions';
+  const [activeTab, setActiveTab] = useState<'subscriptions' | 'invoices'>(initialTab);
+
+  useEffect(() => {
+    if (location.pathname.includes('/invoices')) {
+      setActiveTab('invoices');
+    } else {
+      setActiveTab('subscriptions');
+    }
+  }, [location.pathname]);
+
+  const switchTab = (tab: 'subscriptions' | 'invoices') => {
+    setActiveTab(tab);
+    if (tab === 'invoices') {
+      navigate('/portal/invoices');
+    } else {
+      navigate('/portal');
+    }
+  };
 
   // Pagination states
   const [subPage, setSubPage] = useState(1);
@@ -299,7 +320,7 @@ export const CustomerPortalPage: React.FC = () => {
       <div className="space-y-4">
         <div className="flex border-b border-slate-200">
           <button
-            onClick={() => setActiveTab('subscriptions')}
+            onClick={() => switchTab('subscriptions')}
             className={`pb-3 px-6 text-sm font-bold flex items-center space-x-2 border-b-2 transition-all ${
               activeTab === 'subscriptions'
                 ? 'border-blue-600 text-blue-600'
@@ -316,7 +337,7 @@ export const CustomerPortalPage: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setActiveTab('invoices')}
+            onClick={() => switchTab('invoices')}
             className={`pb-3 px-6 text-sm font-bold flex items-center space-x-2 border-b-2 transition-all ${
               activeTab === 'invoices'
                 ? 'border-blue-600 text-blue-600'

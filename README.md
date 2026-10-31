@@ -124,6 +124,25 @@ npm test
 # or: cd backend && npm test
 ```
 
+### End-to-End Smoke Test Script
+Verify the live signup → login → portal workflow across the entire stack:
+```bash
+./scripts/smoke-test.sh
+```
+
+---
+
+## 🎬 5-Minute Walkthrough Demo Script
+
+For a detailed minute-by-minute presentation guide covering all system capabilities, see [DEMO.md](./DEMO.md).
+
+Quick Outline:
+- **Minute 1**: Interactive Auth & Live Password Security Checklist (`/signup`, `/login`)
+- **Minute 2**: Administrator & Staff Management with Deactivation Protection (`/staff`)
+- **Minute 3**: Products, Variants, Plans & Subscription Contracts (`/catalog`, `/subscriptions`)
+- **Minute 4**: Invoicing Engine with Paid, Unpaid, and Overdue Statements (`/invoices`, `/payments`)
+- **Minute 5**: Customer Portal Self-Service, Printable Invoices, and Automated E2E Smoke Verification (`/portal`)
+
 ---
 
 ## 🗄 Database Schema Highlights
