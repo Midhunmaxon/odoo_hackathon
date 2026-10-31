@@ -1,51 +1,368 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { db } from '../../db';
-import { extractPaginationParams, paginateKnexQuery, paginateArray } from '../../utils/pagination';
-import { sendPaginated } from '../../utils/response';
+import { subscriptionsService } from './subscriptions.service';
+import {
+  createQuotationTemplateSchema,
+  updateQuotationTemplateSchema,
+  fromTemplateSchema,
+  createSubscriptionSchema,
+  updateSubscriptionSchema,
+  transitionStatusSchema,
+} from './subscriptions.validation';
+import { validateBody } from '../../middleware/validate.middleware';
+import { requireAuth, requireRole } from '../../middleware/auth.middleware';
+import { extractPaginationParams } from '../../utils/pagination';
+import { sendSuccess, sendCreated, sendPaginated } from '../../utils/response';
 
 export const subscriptionsRouter = Router();
 
-const DEMO_SUBSCRIPTIONS = [
-  {
-    id: 1,
-    number: 'SUB-2026-001',
-    customer_id: 4,
-    plan_id: 1,
-    start_date: '2026-01-01',
-    expiry_date: null,
-    payment_terms: 'immediate',
-    status: 'ACTIVE',
-    next_billing_date: '2026-11-01',
-  },
-  {
-    id: 2,
-    number: 'SUB-2026-002',
-    customer_id: 5,
-    plan_id: 2,
-    start_date: '2026-02-15',
-    expiry_date: null,
-    payment_terms: '15_days',
-    status: 'ACTIVE',
-    next_billing_date: '2026-11-15',
-  },
-];
+/* ====================================================================
+ * QUOTATION TEMPLATES ENDPOINTS
+ * Staff and admin only for writes
+ * ==================================================================== */
 
 /**
- * GET /api/subscriptions
- * Supports ?page=&limit=&sort=
- * Returns { data, page, limit, total }
+ * GET /templates
  */
-subscriptionsRouter.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  try {
-    const params = extractPaginationParams(req, 10, 'id:desc');
+subscriptionsRouter.get(
+  '/templates',
+  requireAuth,
+  requireRole('ADMIN', 'STAFF'),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const query = db('subscriptions').select('*');
-      const result = await paginateKnexQuery(query, params);
+      const pagination = extractPaginationParams(req, 10, 'id:asc');
+      const result = await subscriptionsService.listTemplates(pagination);
       sendPaginated(res, result);
-    } catch {
-      sendPaginated(res, paginateArray(DEMO_SUBSCRIPTIONS, params));
+    } catch (err) {
+      next(err);
     }
-  } catch (err) {
-    next(err);
   }
-});
+);
+
+/**
+ * GET /templates/:id
+ */
+subscriptionsRouter.get(
+  '/templates/:id',
+  requireAuth,
+  requireRole('ADMIN', 'STAFF'),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const template = await subscriptionsService.getTemplateById(id);
+      sendSuccess(res, template);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * POST /templates
+ */
+subscriptionsRouter.post(
+  '/templates',
+  requireAuth,
+  requireRole('ADMIN', 'STAFF'),
+  validateBody(createQuotationTemplateSchema),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const template = await subscriptionsService.createTemplate(req.body);
+      sendCreated(res, template, 'Quotation template created successfully');
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * PATCH /templates/:id
+ */
+subscriptionsRouter.patch(
+  '/templates/:id',
+  requireAuth,
+  requireRole('ADMIN', 'STAFF'),
+  validateBody(updateQuotationTemplateSchema),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const template = await subscriptionsService.updateTemplate(id, req.body);
+      sendSuccess(res, template, 'Quotation template updated successfully');
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * PUT /templates/:id
+ */
+subscriptionsRouter.put(
+  '/templates/:id',
+  requireAuth,
+  requireRole('ADMIN', 'STAFF'),
+  validateBody(updateQuotationTemplateSchema),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const template = await subscriptionsService.updateTemplate(id, req.body);
+      sendSuccess(res, template, 'Quotation template updated successfully');
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * DELETE /templates/:id
+ */
+subscriptionsRouter.delete(
+  '/templates/:id',
+  requireAuth,
+  requireRole('ADMIN', 'STAFF'),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      await subscriptionsService.deleteTemplate(id);
+      sendSuccess(res, { id }, 'Quotation template deleted successfully');
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/* ====================================================================
+ * POST /from-template/:id
+ * Creates a DRAFT subscription with lines prefilled and computed expiry
+ * ==================================================================== */
+
+subscriptionsRouter.post(
+  '/from-template/:id',
+  requireAuth,
+  requireRole('ADMIN', 'STAFF'),
+  validateBody(fromTemplateSchema),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const templateId = parseInt(req.params.id, 10);
+      const sub = await subscriptionsService.createFromTemplate(templateId, req.body, req.user?.id);
+      sendCreated(res, sub, 'Subscription created from template in DRAFT status');
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/* ====================================================================
+ * SUBSCRIPTIONS CRUD
+ * ==================================================================== */
+
+/**
+ * GET /
+ * Filters by status, customer, date with pagination
+ */
+subscriptionsRouter.get(
+  '/',
+  requireAuth,
+  requireRole('ADMIN', 'STAFF', 'CUSTOMER'),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const pagination = extractPaginationParams(req, 10, 'id:desc');
+
+      // If user is CUSTOMER, only list their own subscriptions
+      let customerId = req.query.customer_id ? parseInt(req.query.customer_id as string, 10) : undefined;
+      if (req.user?.role === 'CUSTOMER') {
+        customerId = req.user.id;
+      }
+
+      const filter = {
+        status: req.query.status as string | undefined,
+        customer_id: customerId,
+        start_date: req.query.start_date as string | undefined,
+        expiry_date: req.query.expiry_date as string | undefined,
+      };
+
+      const result = await subscriptionsService.listSubscriptions(filter, pagination);
+      sendPaginated(res, result);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * GET /:id
+ */
+subscriptionsRouter.get(
+  '/:id',
+  requireAuth,
+  requireRole('ADMIN', 'STAFF', 'CUSTOMER'),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const sub = await subscriptionsService.getSubscriptionById(id);
+
+      // Customer authorization check
+      if (req.user?.role === 'CUSTOMER' && sub.customer_id !== req.user.id) {
+        return next(requireRole('ADMIN', 'STAFF')(req, res, next));
+      }
+
+      sendSuccess(res, sub);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * POST / (Admin and staff only for writes)
+ */
+subscriptionsRouter.post(
+  '/',
+  requireAuth,
+  requireRole('ADMIN', 'STAFF'),
+  validateBody(createSubscriptionSchema),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const sub = await subscriptionsService.createSubscription(req.body, req.user?.id);
+      sendCreated(res, sub, 'Subscription created successfully');
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * PATCH /:id (Admin and staff only for writes)
+ */
+subscriptionsRouter.patch(
+  '/:id',
+  requireAuth,
+  requireRole('ADMIN', 'STAFF'),
+  validateBody(updateSubscriptionSchema),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const sub = await subscriptionsService.updateSubscription(id, req.body);
+      sendSuccess(res, sub, 'Subscription updated successfully');
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * PUT /:id (Admin and staff only for writes)
+ */
+subscriptionsRouter.put(
+  '/:id',
+  requireAuth,
+  requireRole('ADMIN', 'STAFF'),
+  validateBody(updateSubscriptionSchema),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const sub = await subscriptionsService.updateSubscription(id, req.body);
+      sendSuccess(res, sub, 'Subscription updated successfully');
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * DELETE /:id (Admin and staff only)
+ */
+subscriptionsRouter.delete(
+  '/:id',
+  requireAuth,
+  requireRole('ADMIN', 'STAFF'),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      await subscriptionsService.deleteSubscription(id);
+      sendSuccess(res, { id }, 'Subscription deleted successfully');
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/* ====================================================================
+ * STRICT STATE MACHINE TRANSITION: POST /:id/transition
+ * DRAFT → QUOTATION → CONFIRMED → ACTIVE → CLOSED
+ * ==================================================================== */
+
+subscriptionsRouter.post(
+  '/:id/transition',
+  requireAuth,
+  requireRole('ADMIN', 'STAFF'),
+  validateBody(transitionStatusSchema),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const sub = await subscriptionsService.transitionStatus(id, req.body.to_status, req.user?.id);
+      sendSuccess(res, sub, `Subscription transitioned to ${req.body.to_status}`);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/* ====================================================================
+ * SUBSCRIPTION ACTIONS: close, pause, renew
+ * Honors plan allow_close / allow_pause / allow_renew rules
+ * ==================================================================== */
+
+/**
+ * POST /:id/close
+ */
+subscriptionsRouter.post(
+  '/:id/close',
+  requireAuth,
+  requireRole('ADMIN', 'STAFF'),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const sub = await subscriptionsService.closeSubscription(id, req.user?.id);
+      sendSuccess(res, sub, 'Subscription closed successfully');
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * POST /:id/pause
+ */
+subscriptionsRouter.post(
+  '/:id/pause',
+  requireAuth,
+  requireRole('ADMIN', 'STAFF'),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const sub = await subscriptionsService.pauseSubscription(id, req.user?.id);
+      sendSuccess(res, sub, 'Subscription paused successfully');
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * POST /:id/renew
+ */
+subscriptionsRouter.post(
+  '/:id/renew',
+  requireAuth,
+  requireRole('ADMIN', 'STAFF'),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const sub = await subscriptionsService.renewSubscription(id, req.user?.id);
+      sendSuccess(res, sub, 'Subscription renewed successfully');
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
