@@ -9,6 +9,7 @@ import {
   createPaymentSchema,
 } from './invoices.validation';
 import { invoicesService, inMemoryInvoices, inMemoryInvoiceLines, inMemoryPayments } from './invoices.service';
+import { paymentsService } from '../payments/payments.service';
 import { startBillingCron } from './invoices.cron';
 
 // Initialize the daily billing background cron
@@ -17,21 +18,61 @@ startBillingCron();
 export const invoicesRouter = Router();
 
 /**
+ * GET /api/invoices/overdue
+ * Retrieves overdue invoices with days overdue, sorted oldest first.
+ * Registered before /:id to prevent route collision.
+ */
+invoicesRouter.get(
+  '/overdue',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const params = extractPaginationParams(req, 10, 'due_date:asc');
+      const asOfDate = typeof req.query.as_of_date === 'string' ? req.query.as_of_date : undefined;
+      const result = await paymentsService.listOverdueInvoices(params, asOfDate);
+      sendPaginated(res, result);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
  * GET /api/invoices
  * Supports ?page=&limit=&sort=
+ * Computes amount_paid, balance and overdue flag (due_date passed and balance > 0).
+ * Filterable by status, paid/outstanding/overdue, customer, and date range.
  * Returns { data, page, limit, total }
  */
 invoicesRouter.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const params = extractPaginationParams(req, 10, 'id:desc');
-    try {
-      const query = db('invoices').select('*');
-      const result = await paginateKnexQuery(query, params);
-      sendPaginated(res, result);
-    } catch {
-      const list = Array.from(inMemoryInvoices.values()).sort((a, b) => b.id - a.id);
-      sendPaginated(res, paginateArray(list, params));
-    }
+    const filters = {
+      status: typeof req.query.status === 'string' ? req.query.status : undefined,
+      payment_status: typeof req.query.payment_status === 'string'
+        ? (req.query.payment_status as any)
+        : typeof req.query.filter === 'string'
+          ? (req.query.filter as any)
+          : undefined,
+      customer_id: req.query.customer_id
+        ? Number(req.query.customer_id)
+        : req.query.customer
+          ? Number(req.query.customer)
+          : undefined,
+      from_date: typeof req.query.from_date === 'string'
+        ? req.query.from_date
+        : typeof req.query.date_from === 'string'
+          ? req.query.date_from
+          : undefined,
+      to_date: typeof req.query.to_date === 'string'
+        ? req.query.to_date
+        : typeof req.query.date_to === 'string'
+          ? req.query.date_to
+          : undefined,
+      as_of_date: typeof req.query.as_of_date === 'string' ? req.query.as_of_date : undefined,
+    };
+
+    const result = await paymentsService.listInvoicesWithPaymentDetails(filters, params);
+    sendPaginated(res, result);
   } catch (err) {
     next(err);
   }
