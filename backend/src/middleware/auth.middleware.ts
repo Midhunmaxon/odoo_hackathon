@@ -36,6 +36,9 @@ export function authenticateJwt(req: Request, _res: Response, next: NextFunction
 
   try {
     const decoded = jwt.verify(token, env.JWT_SECRET) as AuthUser;
+    if (!decoded || !decoded.id || !decoded.role) {
+      return next(ApiError.unauthorized('Invalid authentication token payload'));
+    }
     req.user = decoded;
     next();
   } catch (err: any) {
@@ -45,6 +48,11 @@ export function authenticateJwt(req: Request, _res: Response, next: NextFunction
     return next(ApiError.unauthorized('Invalid authentication token'));
   }
 }
+
+/**
+ * requireAuth middleware alias for authenticateJwt
+ */
+export const requireAuth = authenticateJwt;
 
 /**
  * Role-Based Access Control (RBAC) Guard Middleware

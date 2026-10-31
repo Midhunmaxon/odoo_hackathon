@@ -1,75 +1,87 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { z } from 'zod';
-import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
-import { db } from '../../db';
-import { env } from '../../config/env';
 import { validateBody } from '../../middleware/validate.middleware';
-import { authenticateJwt, AuthUser } from '../../middleware/auth.middleware';
-import { ApiError } from '../../middleware/error.middleware';
-import { sendSuccess } from '../../utils/response';
+import { requireAuth } from '../../middleware/auth.middleware';
+import { sendSuccess, sendCreated } from '../../utils/response';
+import {
+  signupSchema,
+  loginSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+} from './auth.validation';
+import { authService } from './auth.service';
 
 export const authRouter = Router();
 
-const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(6),
-});
+/**
+ * POST /api/auth/signup
+ * Register a new user with role CUSTOMER, hashed password, unique email.
+ */
+authRouter.post(
+  '/signup',
+  validateBody(signupSchema),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const user = await authService.signup(req.body);
+      sendCreated(res, user, 'User registered successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 /**
  * POST /api/auth/login
+ * Authenticate credentials and return JWT containing user id and role.
  */
 authRouter.post(
   '/login',
   validateBody(loginSchema),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { email, password } = req.body;
+      const result = await authService.login(req.body);
+      sendSuccess(res, result, 'Login successful');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
-      let user: any = null;
-      try {
-        user = await db('users').where({ email, is_active: true }).first();
-      } catch (dbErr) {
-        // Fallback demo users if DB is not connected during local dev
-        if (email === 'admin@brightloop.com') {
-          user = {
-            id: 1,
-            email: 'admin@brightloop.com',
-            name: 'System Admin',
-            role: 'ADMIN',
-            password_hash: bcrypt.hashSync('Password123!', 10),
-            is_active: true,
-          };
-        }
-      }
+/**
+ * POST /api/auth/forgot-password
+ * Generate a random token, store its hash with 1h expiry, email reset link.
+ * Returns identical response whether email exists or not to prevent email enumeration.
+ */
+authRouter.post(
+  '/forgot-password',
+  validateBody(forgotPasswordSchema),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const result = await authService.forgotPassword(req.body.email);
+      sendSuccess(res, result, result.message);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
-      if (!user) {
-        throw ApiError.unauthorized('Invalid email or password');
-      }
-
-      const isPasswordValid = await bcrypt.compare(password, user.password_hash);
-      if (!isPasswordValid) {
-        throw ApiError.unauthorized('Invalid email or password');
-      }
-
-      const payload: AuthUser = {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        name: user.name,
-      };
-
-      const token = jwt.sign(payload, env.JWT_SECRET, { expiresIn: '7d' });
-
-      sendSuccess(res, {
-        token,
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-        },
-      });
+/**
+ * POST /api/auth/reset-password
+ * Validate token and expiry, enforce password rules, and invalidate token after use.
+ */
+authRouter.post(
+  '/reset-password',
+  (req: Request, _res: Response, next: NextFunction) => {
+    // If token is provided in query param (?token=...), copy it to body if not already present
+    if (!req.body.token && req.query.token && typeof req.query.token === 'string') {
+      req.body.token = req.query.token;
+    }
+    next();
+  },
+  validateBody(resetPasswordSchema),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const result = await authService.resetPassword(req.body);
+      sendSuccess(res, result, result.message);
     } catch (error) {
       next(error);
     }
@@ -78,7 +90,8 @@ authRouter.post(
 
 /**
  * GET /api/auth/me
+ * Protected endpoint returning the authenticated user profile.
  */
-authRouter.get('/me', authenticateJwt, (req: Request, res: Response): void => {
+authRouter.get('/me', requireAuth, (req: Request, res: Response): void => {
   sendSuccess(res, req.user);
 });
